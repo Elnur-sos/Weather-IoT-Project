@@ -6,16 +6,13 @@ import threading
 import pandas as pd
 from flask import Flask, jsonify, render_template
 import paho.mqtt.client as mqtt
-import requests
 
 app = Flask(__name__)
 
-# База файлын анықтау (Render және локальды компьютер үшін бірдей жұмыс істейді)
 DB_PATH = "weather_data.db"
 
 
 def init_db():
-  """База мен кестенің бар екенін тексеру, жоқ болса жасау"""
   conn = sqlite3.connect(DB_PATH)
   cursor = conn.cursor()
   cursor.execute("""
@@ -31,7 +28,6 @@ def init_db():
   conn.close()
 
 
-# MQTT арқылы хабарлама келгенде орындалатын функция
 def on_message(client, userdata, msg):
   try:
     payload = msg.payload.decode("utf-8")
@@ -42,7 +38,6 @@ def on_message(client, userdata, msg):
     pressure = data.get("pressure")
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Деректі SQLite базасына сақтау
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
@@ -57,17 +52,15 @@ def on_message(client, userdata, msg):
     print(f"MQTT қатесі: {e}")
 
 
-# Фондық режимде MQTT брокерді тыңдап тұратын функция
 def start_mqtt_listener():
   init_db()
   client = mqtt.Client()
   client.on_message = on_message
-  # HiveMQ тегін брокеріне қосылу
   try:
     client.connect("broker.hivemq.com", 1883, 60)
     client.subscribe("smart/weather/telemetry")
     client.loop_start()
-    print("MQTT брокеріне сәтті қосылды және тыңдау басталды!")
+    print("MQTT тыңдау басталды!")
   except Exception as e:
     print(f"MQTT қосылу қатесі: {e}")
 
@@ -89,20 +82,6 @@ def get_local_db():
     return pd.DataFrame()
 
 
-def get_web_weather():
-  url = "https://api.open-meteo.com/v1/forecast?latitude=43.25&longitude=76.95&current=temperature_2m,relative_humidity_2m,surface_pressure&hourly=temperature_2m,relative_humidity_2m,surface_pressure"
-  try:
-    response = requests.get(url, timeout=5)
-    if response.status_code == 200:
-      return response.json()
-    else:
-      print(f"Open-Meteo API қате коды: {response.status_code}")
-      return None
-  except Exception as e:
-    print(f"Open-Meteo API сұраныс қатесі: {e}")
-    return None
-
-
 @app.route("/")
 def index():
   return render_template("index.html")
@@ -111,7 +90,6 @@ def index():
 @app.route("/api/data")
 def api_data():
   local_df = get_local_db()
-  web_data = get_web_weather()
 
   local_records = (
       local_df.to_dict(orient="records") if not local_df.empty else []
@@ -131,28 +109,6 @@ def api_data():
         "pressure": 0,
         "timestamp": "Жоқ",
     }
-
-  current_web = {"temperature": 0, "humidity": 0, "pressure": 0, "time": "Жоқ"}
-  web_hourly_list = []
-
-  if web_data and "current" in web_data:
-    curr = web_data["current"]
-    current_web = {
-        "temperature": curr.get("temperature_2m", 0),
-        "humidity": curr.get("relative_humidity_2m", 0),
-        "pressure": curr.get("surface_pressure", 0),
-        "time": "Қазіргі сәт (Open-Meteo)",
-    }
-
-  if web_data and "hourly" in web_data:
-    hourly = web_data["hourly"]
-    for i in range(min(15, len(hourly["time"]))):
-      web_hourly_list.append({
-          "time": hourly["time"][i].replace("T", " "),
-          "temperature": hourly["temperature_2m"][i],
-          "humidity": hourly["relative_humidity_2m"][i],
-          "pressure": hourly["surface_pressure"][i],
-      })
 
   ai_results = []
   if not local_df.empty:
@@ -199,9 +155,7 @@ def api_data():
 
   return jsonify({
       "latest_local": latest_local,
-      "current_web": current_web,
       "local_table": local_records,
-      "web_table": web_hourly_list,
       "chart_data": (
           local_df.iloc[::-1].to_dict(orient="records")
           if not local_df.empty
@@ -212,6 +166,5 @@ def api_data():
 
 
 if __name__ == "__main__":
-  # MQTT тыңдаушыны бөлек ағында (thread) іске қосамыз
   threading.Thread(target=start_mqtt_listener, daemon=True).start()
   app.run(host="0.0.0.0", port=5000, debug=True)

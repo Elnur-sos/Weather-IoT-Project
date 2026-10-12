@@ -27,7 +27,6 @@
                 <h3 class="text-danger m-0">📡 Жергілікті IoT Датчиктері (Wokwi / ESP32 Live)</h3>
             </div>
             
-            <!-- Метрикалар -->
             <div class="row text-center mb-4">
                 <div class="col-md-4">
                     <div class="p-3 bg-dark rounded border border-danger">
@@ -49,7 +48,6 @@
                 </div>
             </div>
 
-            <!-- Үлкен Жеке Графиктер (IoT) -->
             <div class="row">
                 <div class="col-md-4">
                     <div class="card p-3 bg-black">
@@ -71,7 +69,6 @@
                 </div>
             </div>
 
-            <!-- IoT Кестесі -->
             <h5 class="mt-3">📋 Жергілікті Деректер Журналы</h5>
             <div class="table-responsive">
                 <table class="table table-dark table-striped table-hover" id="iot-table">
@@ -84,10 +81,9 @@
         <!-- ================= 2. БӨЛІМ: САЙТ ДЕРЕКТЕРИ (OPEN-METEO) ================= -->
         <div class="card p-4">
             <div class="section-header">
-                <h3 class="text-primary m-0">🌐 Сайт Деректері (Open-Meteo API - Ағымдағы және Болжам)</h3>
+                <h3 class="text-primary m-0">🌐 Сайт Деректері (Open-Meteo API - Алматы)</h3>
             </div>
 
-            <!-- Метрикалар -->
             <div class="row text-center mb-4">
                 <div class="col-md-4">
                     <div class="p-3 bg-dark rounded border border-danger">
@@ -109,7 +105,6 @@
                 </div>
             </div>
 
-            <!-- Үлкен Жеке Графиктер (Сайт) -->
             <div class="row">
                 <div class="col-md-4">
                     <div class="card p-3 bg-black">
@@ -131,7 +126,6 @@
                 </div>
             </div>
 
-            <!-- Сайт Кестесі -->
             <h5 class="mt-3">📋 Сайт Метео-Мәліметтерінің Журналы</h5>
             <div class="table-responsive">
                 <table class="table table-dark table-striped table-hover" id="web-table">
@@ -164,36 +158,26 @@
         function initCharts() {
             const opts = { responsive: true, maintainAspectRatio: true, animation: false, scales: { x: { ticks: { color: '#aaa', font: { size: 9 } } }, y: { ticks: { color: '#aaa' } } } };
 
-            // IoT Графиктер
             iotTempC = new Chart(document.getElementById('iotTempChart').getContext('2d'), { type: 'line', data: { labels: [], datasets: [{ label: 'IoT °C', data: [], borderColor: '#ff4d4d', backgroundColor: 'rgba(255, 77, 77, 0.1)', fill: true }] }, options: opts });
             iotHumC = new Chart(document.getElementById('iotHumChart').getContext('2d'), { type: 'line', data: { labels: [], datasets: [{ label: 'IoT %', data: [], borderColor: '#3399ff', backgroundColor: 'rgba(51, 153, 255, 0.1)', fill: true }] }, options: opts });
             iotPressC = new Chart(document.getElementById('iotPressChart').getContext('2d'), { type: 'line', data: { labels: [], datasets: [{ label: 'IoT hPa', data: [], borderColor: '#2eb82e', backgroundColor: 'rgba(46, 184, 46, 0.1)', fill: true }] }, options: opts });
 
-            // Сайт Графиктер
             webTempC = new Chart(document.getElementById('webTempChart').getContext('2d'), { type: 'line', data: { labels: [], datasets: [{ label: 'Сайт °C', data: [], borderColor: '#ff6666', backgroundColor: 'rgba(255, 102, 102, 0.1)', fill: true }] }, options: opts });
             webHumC = new Chart(document.getElementById('webHumChart').getContext('2d'), { type: 'line', data: { labels: [], datasets: [{ label: 'Сайт %', data: [], borderColor: '#66b2ff', backgroundColor: 'rgba(102, 178, 255, 0.1)', fill: true }] }, options: opts });
             webPressC = new Chart(document.getElementById('webPressChart').getContext('2d'), { type: 'line', data: { labels: [], datasets: [{ label: 'Сайт hPa', data: [], borderColor: '#5cd65c', backgroundColor: 'rgba(92, 214, 92, 0.1)', fill: true }] }, options: opts });
         }
 
-        function fetchData() {
+        // 1. Жергілікті IoT деректерін Flask серверден алу
+        function fetchIotData() {
             fetch('/api/data')
                 .then(res => res.json())
                 .then(data => {
-                    // Метрикалар (IoT)
                     if (data.latest_local) {
-                        document.getElementById('l-temp').innerText = (data.latest_local.temperature !== undefined ? data.latest_local.temperature : 0) + " °C";
-                        document.getElementById('l-hum').innerText = (data.latest_local.humidity !== undefined ? data.latest_local.humidity : 0) + " %";
-                        document.getElementById('l-press').innerText = (data.latest_local.pressure !== undefined ? data.latest_local.pressure : 0) + " hPa";
+                        document.getElementById('l-temp').innerText = data.latest_local.temperature + " °C";
+                        document.getElementById('l-hum').innerText = data.latest_local.humidity + " %";
+                        document.getElementById('l-press').innerText = data.latest_local.pressure + " hPa";
                     }
 
-                    // Метрикалар (Open-Meteo Сайт)
-                    if (data.current_web) {
-                        document.getElementById('w-temp').innerText = (data.current_web.temperature !== undefined ? data.current_web.temperature : 0) + " °C";
-                        document.getElementById('w-hum').innerText = (data.current_web.humidity !== undefined ? data.current_web.humidity : 0) + " %";
-                        document.getElementById('w-press').innerText = (data.current_web.pressure !== undefined ? data.current_web.pressure : 0) + " hPa";
-                    }
-
-                    // IoT Кестесі
                     let iotBody = document.querySelector('#iot-table tbody');
                     iotBody.innerHTML = "";
                     if (data.local_table) {
@@ -202,16 +186,6 @@
                         });
                     }
 
-                    // Сайт Кестесі
-                    let webBody = document.querySelector('#web-table tbody');
-                    webBody.innerHTML = "";
-                    if (data.web_table) {
-                        data.web_table.forEach(r => {
-                            webBody.innerHTML += `<tr><td>${r.time}</td><td>${r.temperature}</td><td>${r.humidity}</td><td>${r.pressure}</td></tr>`;
-                        });
-                    }
-
-                    // AI Болжам Кестесі
                     let aiBody = document.querySelector('#ai-table tbody');
                     aiBody.innerHTML = "";
                     if (data.ai_predictions) {
@@ -220,7 +194,6 @@
                         });
                     }
 
-                    // IoT Графиктерді жаңарту
                     if (data.chart_data && data.chart_data.length > 0) {
                         const iotLabels = data.chart_data.map(x => x.timestamp);
                         iotTempC.data.labels = iotLabels;
@@ -235,30 +208,69 @@
                         iotPressC.data.datasets[0].data = data.chart_data.map(x => x.pressure);
                         iotPressC.update();
                     }
+                })
+                .catch(err => console.log("IoT fetch err:", err));
+        }
 
-                    // Сайт Графиктерді жаңарту
-                    if (data.web_table && data.web_table.length > 0) {
-                        const webLabels = data.web_table.map(x => x.time.split(' ')[1] || x.time);
-                        webTempC.data.labels = webLabels;
-                        webTempC.data.datasets[0].data = data.web_table.map(x => x.temperature);
+        // 2. Open-Meteo API-ді тікелей браузерден шақыру (100% жұмыс істейді)
+        function fetchOpenMeteoData() {
+            const openMeteoUrl = "https://api.open-meteo.com/v1/forecast?latitude=43.25&longitude=76.95&current=temperature_2m,relative_humidity_2m,surface_pressure&hourly=temperature_2m,relative_humidity_2m,surface_pressure";
+
+            fetch(openMeteoUrl)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.current) {
+                        document.getElementById('w-temp').innerText = data.current.temperature_2m + " °C";
+                        document.getElementById('w-hum').innerText = data.current.relative_humidity_2m + " %";
+                        document.getElementById('w-press').innerText = data.current.surface_pressure + " hPa";
+                    }
+
+                    if (data.hourly) {
+                        let webBody = document.querySelector('#web-table tbody');
+                        webBody.innerHTML = "";
+                        
+                        let times = [];
+                        let temps = [];
+                        let hums = [];
+                        let presses = [];
+
+                        for (let i = 0; i < 15; i++) {
+                            let timeStr = data.hourly.time[i].replace('T', ' ');
+                            let tempVal = data.hourly.temperature_2m[i];
+                            let humVal = data.hourly.relative_humidity_2m[i];
+                            let pressVal = data.hourly.surface_pressure[i];
+
+                            webBody.innerHTML += `<tr><td>${timeStr}</td><td>${tempVal}</td><td>${humVal}</td><td>${pressVal}</td></tr>`;
+
+                            times.push(timeStr.split(' ')[1]);
+                            temps.push(tempVal);
+                            hums.push(humVal);
+                            presses.push(pressVal);
+                        }
+
+                        webTempC.data.labels = times;
+                        webTempC.data.datasets[0].data = temps;
                         webTempC.update();
 
-                        webHumC.data.labels = webLabels;
-                        webHumC.data.datasets[0].data = data.web_table.map(x => x.humidity);
+                        webHumC.data.labels = times;
+                        webHumC.data.datasets[0].data = hums;
                         webHumC.update();
 
-                        webPressC.data.labels = webLabels;
-                        webPressC.data.datasets[0].data = data.web_table.map(x => x.pressure);
+                        webPressC.data.labels = times;
+                        webPressC.data.datasets[0].data = presses;
                         webPressC.update();
                     }
                 })
-                .catch(err => console.log("API қатесі: ", err));
+                .catch(err => console.log("OpenMeteo fetch err:", err));
         }
 
         window.onload = function() {
             initCharts();
-            fetchData();
-            setInterval(fetchData, 5000); 
+            fetchIotData();
+            fetchOpenMeteoData();
+
+            setInterval(fetchIotData, 5000);
+            setInterval(fetchOpenMeteoData, 60000); // 1 минут сайын
         };
     </script>
 </body>
