@@ -81,18 +81,35 @@ def get_local_db():
     return pd.DataFrame()
 
 
+
 def get_web_weather():
-  # URL соңына уақытты қосып кэштелуді болдырмаймыз
-  url = "https://api.open-meteo.com/v1/forecast?latitude=43.25&longitude=76.95&current=temperature_2m,relative_humidity_2m,surface_pressure&hourly=temperature_2m,relative_humidity_2m,surface_pressure"
-  headers = {"User-Agent": "Mozilla/5.0"}
-  try:
-    response = requests.get(url, headers=headers, timeout=5)
-    if response.status_code == 200:
-      return response.json()
-    return None
-  except Exception as e:
-    print(f"Open-Meteo API қатесі: {e}")
-    return None
+    url = "https://api.open-meteo.com/v1/forecast"
+
+    params = {
+        "latitude": 43.25,
+        "longitude": 76.95,
+        "current": "temperature_2m,relative_humidity_2m,surface_pressure",
+        "hourly": "temperature_2m,relative_humidity_2m,surface_pressure",
+        "timezone": "Asia/Almaty"
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=20)
+        response.raise_for_status()
+
+        data = response.json()
+
+        if "current" not in data:
+            print("Open-Meteo не вернул текущую погоду:", data)
+            return None
+
+        print("Погода успешно получена:", data["current"])
+        return data
+
+    except Exception as e:
+        print("Ошибка Open-Meteo:", e)
+        return None
+
 
 
 @app.route("/")
@@ -203,5 +220,9 @@ def api_data():
 
 
 if __name__ == "__main__":
-  threading.Thread(target=start_mqtt_listener, daemon=True).start()
-  app.run(host="0.0.0.0", port=5000, debug=True)
+    threading.Thread(
+        target=start_mqtt_listener,
+        daemon=True
+    ).start()
+
+    app.run(host="0.0.0.0", port=5000, debug=True)
