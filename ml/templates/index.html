@@ -181,7 +181,7 @@
                 .then(data => {
                     // Метрикалар (IoT)
                     if (data.latest_local) {
-                        document.getElementById('l-temp.innerText = (data.latest_local.temperature !== undefined ? data.latest_local.temperature : 0) + " °C";
+                        document.getElementById('l-temp').innerText = (data.latest_local.temperature !== undefined ? data.latest_local.temperature : 0) + " °C";
                         document.getElementById('l-hum').innerText = (data.latest_local.humidity !== undefined ? data.latest_local.humidity : 0) + " %";
                         document.getElementById('l-press').innerText = (data.latest_local.pressure !== undefined ? data.latest_local.pressure : 0) + " hPa";
                     }
@@ -251,13 +251,14 @@
                         webPressC.data.datasets[0].data = data.web_table.map(x => x.pressure);
                         webPressC.update();
                     }
-                });
+                })
+                .catch(err => console.log("API қатесі: ", err));
         }
 
         window.onload = function() {
             initCharts();
             fetchData();
-            setInterval(fetchData, 5000); // Әр 5 сайын автоматты түрде жаңарту
+            setInterval(fetchData, 5000); 
         };
     </script>
 </body>
