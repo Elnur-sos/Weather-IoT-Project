@@ -179,38 +179,49 @@
             fetch('/api/data')
                 .then(res => res.json())
                 .then(data => {
-                    // Метрикалар
-                    document.getElementById('l-temp').innerText = data.latest_local.temperature + " °C";
-                    document.getElementById('l-hum').innerText = data.latest_local.humidity + " %";
-                    document.getElementById('l-press').innerText = data.latest_local.pressure + " hPa";
+                    // Метрикалар (IoT)
+                    if (data.latest_local) {
+                        document.getElementById('l-temp.innerText = (data.latest_local.temperature !== undefined ? data.latest_local.temperature : 0) + " °C";
+                        document.getElementById('l-hum').innerText = (data.latest_local.humidity !== undefined ? data.latest_local.humidity : 0) + " %";
+                        document.getElementById('l-press').innerText = (data.latest_local.pressure !== undefined ? data.latest_local.pressure : 0) + " hPa";
+                    }
 
-                    document.getElementById('w-temp').innerText = data.current_web.temperature + " °C";
-                    document.getElementById('w-hum').innerText = data.current_web.humidity + " %";
-                    document.getElementById('w-press').innerText = data.current_web.pressure + " hPa";
+                    // Метрикалар (Open-Meteo Сайт)
+                    if (data.current_web) {
+                        document.getElementById('w-temp').innerText = (data.current_web.temperature !== undefined ? data.current_web.temperature : 0) + " °C";
+                        document.getElementById('w-hum').innerText = (data.current_web.humidity !== undefined ? data.current_web.humidity : 0) + " %";
+                        document.getElementById('w-press').innerText = (data.current_web.pressure !== undefined ? data.current_web.pressure : 0) + " hPa";
+                    }
 
                     // IoT Кестесі
                     let iotBody = document.querySelector('#iot-table tbody');
                     iotBody.innerHTML = "";
-                    data.local_table.forEach(r => {
-                        iotBody.innerHTML += `<tr><td>${r.timestamp}</td><td>${r.temperature}</td><td>${r.humidity}</td><td>${r.pressure}</td></tr>`;
-                    });
+                    if (data.local_table) {
+                        data.local_table.forEach(r => {
+                            iotBody.innerHTML += `<tr><td>${r.timestamp}</td><td>${r.temperature}</td><td>${r.humidity}</td><td>${r.pressure}</td></tr>`;
+                        });
+                    }
 
                     // Сайт Кестесі
                     let webBody = document.querySelector('#web-table tbody');
                     webBody.innerHTML = "";
-                    data.web_table.forEach(r => {
-                        webBody.innerHTML += `<tr><td>${r.time}</td><td>${r.temperature}</td><td>${r.humidity}</td><td>${r.pressure}</td></tr>`;
-                    });
+                    if (data.web_table) {
+                        data.web_table.forEach(r => {
+                            webBody.innerHTML += `<tr><td>${r.time}</td><td>${r.temperature}</td><td>${r.humidity}</td><td>${r.pressure}</td></tr>`;
+                        });
+                    }
 
                     // AI Болжам Кестесі
                     let aiBody = document.querySelector('#ai-table tbody');
                     aiBody.innerHTML = "";
-                    data.ai_predictions.forEach(r => {
-                        aiBody.innerHTML += `<tr><td>${r.step}</td><td>${r.temp}</td><td>${r.humidity}</td><td>${r.pressure}</td><td>${r.condition}</td></tr>`;
-                    });
+                    if (data.ai_predictions) {
+                        data.ai_predictions.forEach(r => {
+                            aiBody.innerHTML += `<tr><td>${r.step}</td><td>${r.temp}</td><td>${r.humidity}</td><td>${r.pressure}</td><td>${r.condition}</td></tr>`;
+                        });
+                    }
 
                     // IoT Графиктерді жаңарту
-                    if (data.chart_data.length > 0) {
+                    if (data.chart_data && data.chart_data.length > 0) {
                         const iotLabels = data.chart_data.map(x => x.timestamp);
                         iotTempC.data.labels = iotLabels;
                         iotTempC.data.datasets[0].data = data.chart_data.map(x => x.temperature);
@@ -226,8 +237,8 @@
                     }
 
                     // Сайт Графиктерді жаңарту
-                    if (data.web_table.length > 0) {
-                        const webLabels = data.web_table.map(x => x.time.split(' ')[1]);
+                    if (data.web_table && data.web_table.length > 0) {
+                        const webLabels = data.web_table.map(x => x.time.split(' ')[1] || x.time);
                         webTempC.data.labels = webLabels;
                         webTempC.data.datasets[0].data = data.web_table.map(x => x.temperature);
                         webTempC.update();
@@ -246,7 +257,7 @@
         window.onload = function() {
             initCharts();
             fetchData();
-            setInterval(fetchData, 5000); // Әр 5 секунд сайын автоматты түрде жаңарту
+            setInterval(fetchData, 5000); // Әр 5 сайын автоматты түрде жаңарту
         };
     </script>
 </body>
