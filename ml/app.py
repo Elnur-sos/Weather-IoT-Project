@@ -82,13 +82,16 @@ def get_local_db():
 
 
 def get_web_weather():
+  # URL соңына уақытты қосып кэштелуді болдырмаймыз
   url = "https://api.open-meteo.com/v1/forecast?latitude=43.25&longitude=76.95&current=temperature_2m,relative_humidity_2m,surface_pressure&hourly=temperature_2m,relative_humidity_2m,surface_pressure"
+  headers = {"User-Agent": "Mozilla/5.0"}
   try:
-    response = requests.get(url, timeout=5)
+    response = requests.get(url, headers=headers, timeout=5)
     if response.status_code == 200:
       return response.json()
     return None
-  except:
+  except Exception as e:
+    print(f"Open-Meteo API қатесі: {e}")
     return None
 
 
