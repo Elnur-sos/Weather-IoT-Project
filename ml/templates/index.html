@@ -114,6 +114,7 @@
     <script>
         let iotTempC, iotHumC, iotPressC;
         let webTempC, webHumC, webPressC;
+        let webDataLoaded = false; // Сайт деректері бір рет жүктелген соң жоғалмау үшін
 
         function initCharts() {
             const opts = { responsive: true, maintainAspectRatio: true, animation: false, scales: { x: { ticks: { color: '#aaa', font: { size: 9 } } }, y: { ticks: { color: '#aaa' } } } };
@@ -131,15 +132,15 @@
             fetch('/api/data')
                 .then(res => res.json())
                 .then(data => {
-                    // IoT
+                    // IoT мәліметтерін жаңарту
                     if (data.latest_local) {
                         document.getElementById('l-temp').innerText = data.latest_local.temperature + " °C";
                         document.getElementById('l-hum').innerText = data.latest_local.humidity + " %";
                         document.getElementById('l-press').innerText = data.latest_local.pressure + " hPa";
                     }
 
-                    // Сайт (Open-Meteo)
-                    if (data.current_web) {
+                    // Сайт (Open-Meteo) мәліметтерін бір рет келген соң сақтап қалу
+                    if (data.current_web && data.current_web.temperature !== 0) {
                         document.getElementById('w-temp').innerText = data.current_web.temperature + " °C";
                         document.getElementById('w-hum').innerText = data.current_web.humidity + " %";
                         document.getElementById('w-press').innerText = data.current_web.pressure + " hPa";
@@ -154,10 +155,10 @@
                         });
                     }
 
-                    // Сайт Кестесі
-                    let webBody = document.querySelector('#web-table tbody');
-                    webBody.innerHTML = "";
-                    if (data.web_table) {
+                    // Сайт Кестесі мен Графиктер (тек дерек бар болса ғана жаңарту)
+                    if (data.web_table && data.web_table.length > 0 && !webDataLoaded) {
+                        let webBody = document.querySelector('#web-table tbody');
+                        webBody.innerHTML = "";
                         let times = [];
                         let temps = [];
                         let hums = [];
@@ -182,6 +183,8 @@
                         webPressC.data.labels = times;
                         webPressC.data.datasets[0].data = presses;
                         webPressC.update();
+
+                        webDataLoaded = true; // Қайтадан нөлге айналып кетпес үшін жауып қоямыз
                     }
 
                     // AI Болжам
