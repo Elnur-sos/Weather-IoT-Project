@@ -1,20 +1,84 @@
 from datetime import datetime
 import os
 import sqlite3
+import threading
 import pandas as pd
 from flask import Flask, jsonify, render_template
+import paho.mqtt.client as mqtt
 import requests
 
 app = Flask(__name__)
 
+# База файлын анықтау (Render және локальды компьютер үшін бірдей жұмыс істейді)
+DB_PATH = "weather_data.db"
+
+
+def init_db():
+  """База мен кестенің бар екенін тексеру, жоқ болса жасау"""
+  conn = sqlite3.connect(DB_PATH)
+  cursor = conn.cursor()
+  cursor.execute("""
+        CREATE TABLE IF NOT EXISTS telemetry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            temperature REAL,
+            humidity REAL,
+            pressure REAL
+        )
+    """)
+  conn.commit()
+  conn.close()
+
+
+# MQTT арқылы хабарлама келгенде орындалатын функция
+def on_message(client, userdata, msg):
+  try:
+    import json
+
+    payload = msg.payload.decode("utf-8")
+    data = json.loads(payload)
+
+    temp = data.get("temperature")
+    humidity = data.get("humidity")
+    pressure = data.get("pressure")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Деректі SQLite базасына сақтау
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO telemetry (timestamp, temperature, humidity, pressure)"
+        " VALUES (?, ?, ?, ?)",
+        (timestamp, temp, humidity, pressure),
+    )
+    conn.commit()
+    conn.close()
+    print(f"Дерек базаға жазылды: {temp}°C, {humidity}%, {pressure}hPa")
+  except Exception as e:
+    print(f"MQTT қатесі: {e}")
+
+
+# Фондық режимде MQTT брокерді тыңдап тұратын функция
+def start_mqtt_listener():
+  init_db()
+  client = mqtt.Client()
+  client.on_message = on_message
+  # HiveMQ тегін брокеріне қосылу
+  try:
+    client.connect("broker.hivemq.com", 1883, 60)
+    client.subscribe("smart/weather/telemetry")
+    client.loop_start()
+    print("MQTT брокеріне сәтті қосылды және тыңдау басталды!")
+  except Exception as e:
+    print(f"MQTT қосылу қатесі: {e}")
+
 
 def get_local_db():
   try:
-    db_path = r"C:\Users\Huawe\OneDrive\Рабочий стол\Weather-IoT-Project\mqtt\weather_data.db"
-    if not os.path.exists(db_path):
-      db_path = "weather_data.db"
+    if not os.path.exists(DB_PATH):
+      init_db()
 
-    conn = sqlite3.connect(db_path, timeout=5)
+    conn = sqlite3.connect(DB_PATH, timeout=5)
     df = pd.read_sql_query(
         "SELECT timestamp, temperature, humidity, pressure FROM telemetry"
         " ORDER BY id DESC LIMIT 30",
@@ -97,25 +161,21 @@ def api_data():
     current_p = last_p
 
     for step in range(1, 7):
-      # Әр сағат сайын әртүрлі динамика беру (ашық, бұлтты және жаңбыр алмасып тұруы үшін)
       if step in [1, 4]:
         current_t += 0.3
-        current_h -= 10  # Ылғал төмен -> Ашық күн
+        current_h -= 10
         current_p += 1.0
       elif step in [2, 5]:
         current_t -= 0.2
-        current_h += 15  # Ылғал орташа -> Бұлтты
+        current_h += 15
         current_p -= 1.5
       else:
         current_t += 0.1
-        current_h += 25  # Ылғал өте жоғары -> Жаңбыр
+        current_h += 25
         current_p -= 2.5
 
-      # Ылғалдылықты 10 бен 100 аралығында шектеу
       current_h = max(10, min(100, current_h))
-      p_diff = current_p - last_p
 
-      # Статустарды анықтау шарттары
       if current_t < 0.0:
         cond = "❄️ Аязды ауа райы"
       elif current_h > 70.0:
@@ -148,4 +208,6 @@ def api_data():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+  # MQTT тыңдаушыны бөлек ағында (thread) іске қосамыз
+  threading.Thread(target=start_mqtt_listener, daemon=True).start()
+  app.run(host="0.0.0.0", port=5000, debug=True)
