@@ -6,7 +6,6 @@ import threading
 import pandas as pd
 from flask import Flask, jsonify, render_template
 import paho.mqtt.client as mqtt
-import requests
 
 app = Flask(__name__)
 
@@ -81,17 +80,6 @@ def get_local_db():
     return pd.DataFrame()
 
 
-def get_web_weather():
-  url = "https://api.open-meteo.com/v1/forecast?latitude=43.25&longitude=76.95&current=temperature_2m,relative_humidity_2m,surface_pressure&hourly=temperature_2m,relative_humidity_2m,surface_pressure"
-  try:
-    response = requests.get(url, timeout=5)
-    if response.status_code == 200:
-      return response.json()
-    return None
-  except:
-    return None
-
-
 @app.route("/")
 def index():
   return render_template("index.html")
@@ -100,7 +88,6 @@ def index():
 @app.route("/api/data")
 def api_data():
   local_df = get_local_db()
-  web_data = get_web_weather()
 
   local_records = (
       local_df.to_dict(orient="records") if not local_df.empty else []
@@ -120,27 +107,6 @@ def api_data():
         "pressure": 0,
         "timestamp": "Жоқ",
     }
-
-  current_web = {"temperature": 0, "humidity": 0, "pressure": 0}
-  web_hourly_list = []
-
-  if web_data and "current" in web_data:
-    curr = web_data["current"]
-    current_web = {
-        "temperature": curr.get("temperature_2m", 0),
-        "humidity": curr.get("relative_humidity_2m", 0),
-        "pressure": curr.get("surface_pressure", 0),
-    }
-
-  if web_data and "hourly" in web_data:
-    hourly = web_data["hourly"]
-    for i in range(min(15, len(hourly["time"]))):
-      web_hourly_list.append({
-          "time": hourly["time"][i].replace("T", " "),
-          "temperature": hourly["temperature_2m"][i],
-          "humidity": hourly["relative_humidity_2m"][i],
-          "pressure": hourly["surface_pressure"][i],
-      })
 
   ai_results = []
   if not local_df.empty:
@@ -187,9 +153,7 @@ def api_data():
 
   return jsonify({
       "latest_local": latest_local,
-      "current_web": current_web,
       "local_table": local_records,
-      "web_table": web_hourly_list,
       "chart_data": (
           local_df.iloc[::-1].to_dict(orient="records")
           if not local_df.empty
