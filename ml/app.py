@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 import os
 import sqlite3
 import threading
@@ -33,8 +34,6 @@ def init_db():
 # MQTT арқылы хабарлама келгенде орындалатын функция
 def on_message(client, userdata, msg):
   try:
-    import json
-
     payload = msg.payload.decode("utf-8")
     data = json.loads(payload)
 
@@ -93,9 +92,14 @@ def get_local_db():
 def get_web_weather():
   url = "https://api.open-meteo.com/v1/forecast?latitude=43.25&longitude=76.95&current=temperature_2m,relative_humidity_2m,surface_pressure&hourly=temperature_2m,relative_humidity_2m,surface_pressure"
   try:
-    res = requests.get(url).json()
-    return res
-  except:
+    response = requests.get(url, timeout=5)
+    if response.status_code == 200:
+      return response.json()
+    else:
+      print(f"Open-Meteo API қате коды: {response.status_code}")
+      return None
+  except Exception as e:
+    print(f"Open-Meteo API сұраныс қатесі: {e}")
     return None
 
 
