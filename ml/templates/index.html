@@ -1,517 +1,207 @@
-<!DOCTYPE html>
-<html lang="kk">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+from datetime import datetime
+import json
+import os
+import sqlite3
+import threading
+import pandas as pd
+from flask import Flask, jsonify, render_template
+import paho.mqtt.client as mqtt
+import requests
 
-    <title>Smart Weather Dashboard</title>
+app = Flask(__name__)
 
-    <link
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-        rel="stylesheet"
-    >
+DB_PATH = "weather_data.db"
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <style>
-        body {
-            background: #121212;
-            color: #e0e0e0;
-            font-family: Arial, sans-serif;
-            padding: 15px;
-        }
+def init_db():
+  conn = sqlite3.connect(DB_PATH)
+  cursor = conn.cursor()
+  cursor.execute("""
+        CREATE TABLE IF NOT EXISTS telemetry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            temperature REAL,
+            humidity REAL,
+            pressure REAL
+        )
+    """)
+  conn.commit()
+  conn.close()
 
-        .dashboard {
-            background: #1e1e1e;
-            border: 1px solid #333;
-            border-radius: 12px;
-            padding: 25px;
-            box-shadow: 0 4px 10px #0005;
-        }
 
-        .section-header {
-            background: #222;
-            padding: 18px;
-            border-bottom: 2px solid #444;
-            border-radius: 10px;
-            margin-bottom: 25px;
-        }
+def on_message(client, userdata, msg):
+  try:
+    payload = msg.payload.decode("utf-8")
+    data = json.loads(payload)
 
-        .section-header h2 {
-            color: #1680ff;
-            font-size: clamp(20px, 3vw, 32px);
-            margin: 0;
-        }
+    temp = data.get("temperature")
+    humidity = data.get("humidity")
+    pressure = data.get("pressure")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        .weather-card {
-            background: #222629;
-            border: 1px solid;
-            border-radius: 8px;
-            padding: 22px 10px;
-            text-align: center;
-            height: 100%;
-        }
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO telemetry (timestamp, temperature, humidity, pressure)"
+        " VALUES (?, ?, ?, ?)",
+        (timestamp, temp, humidity, pressure),
+    )
+    conn.commit()
+    conn.close()
+  except Exception as e:
+    print(f"MQTT қатесі: {e}")
 
-        .temperature-card {
-            border-color: #ff4055;
-        }
 
-        .humidity-card {
-            border-color: #1680ff;
-        }
+def start_mqtt_listener():
+  init_db()
+  client = mqtt.Client()
+  client.on_message = on_message
+  try:
+    client.connect("broker.hivemq.com", 1883, 60)
+    client.subscribe("smart/weather/telemetry")
+    client.loop_start()
+  except Exception as e:
+    print(f"MQTT қосылу қатесі: {e}")
 
-        .pressure-card {
-            border-color: #159b63;
-        }
 
-        .weather-value {
-            font-size: 36px;
-            margin-top: 10px;
-        }
+def get_local_db():
+  try:
+    if not os.path.exists(DB_PATH):
+      init_db()
 
-        .temperature-value {
-            color: #ff4055;
-        }
+    conn = sqlite3.connect(DB_PATH, timeout=5)
+    df = pd.read_sql_query(
+        "SELECT timestamp, temperature, humidity, pressure FROM telemetry"
+        " ORDER BY id DESC LIMIT 30",
+        conn,
+    )
+    conn.close()
+    return df
+  except Exception as e:
+    return pd.DataFrame()
 
-        .humidity-value {
-            color: #1680ff;
-        }
 
-        .pressure-value {
-            color: #159b63;
-        }
+def get_web_weather():
+  # URL соңына уақытты қосып кэштелуді болдырмаймыз
+  url = "https://api.open-meteo.com/v1/forecast?latitude=43.25&longitude=76.95&current=temperature_2m,relative_humidity_2m,surface_pressure&hourly=temperature_2m,relative_humidity_2m,surface_pressure"
+  headers = {"User-Agent": "Mozilla/5.0"}
+  try:
+    response = requests.get(url, headers=headers, timeout=5)
+    if response.status_code == 200:
+      return response.json()
+    return None
+  except Exception as e:
+    print(f"Open-Meteo API қатесі: {e}")
+    return None
 
-        .chart-card {
-            background: #000;
-            border: 1px solid #333;
-            border-radius: 10px;
-            padding: 18px;
-            height: 310px;
-        }
 
-        .chart-card h5 {
-            font-size: 17px;
-            text-align: center;
-            margin-bottom: 15px;
-        }
+@app.route("/")
+def index():
+  return render_template("index.html")
 
-        .temperature-title {
-            color: #ff5868;
-        }
 
-        .humidity-title {
-            color: #1680ff;
-        }
+@app.route("/api/data")
+def api_data():
+  local_df = get_local_db()
+  web_data = get_web_weather()
 
-        .pressure-title {
-            color: #27c477;
-        }
+  local_records = (
+      local_df.to_dict(orient="records") if not local_df.empty else []
+  )
 
-        .chart-container {
-            height: 225px;
-            position: relative;
-        }
-
-        .table-responsive {
-            border-radius: 6px;
-        }
-
-        .table {
-            --bs-table-bg: #222629;
-            --bs-table-color: #eee;
-            --bs-table-border-color: #444;
-            margin-bottom: 0;
-        }
-
-        .table thead th {
-            white-space: nowrap;
-        }
-
-        .status {
-            color: #aaa;
-            font-size: 14px;
-            margin-top: 15px;
-        }
-
-        .section-title {
-            font-size: 22px;
-            margin: 30px 0 12px;
-        }
-
-        @media (max-width: 576px) {
-            body {
-                padding: 5px;
-            }
-
-            .dashboard {
-                padding: 12px;
-            }
-
-            .weather-value {
-                font-size: 30px;
-            }
-        }
-    </style>
-</head>
-
-<body>
-
-<div class="container-fluid dashboard">
-
-    <div class="section-header">
-        <h2>🌐 Сайт Деректері (Open-Meteo API - Ағымдағы және Болжам)</h2>
-        <div class="status">
-            📍 Алматы, Қазақстан
-            <span id="updatedTime"></span>
-        </div>
-    </div>
-
-    <div id="errorMessage"
-         class="alert alert-danger d-none"
-         role="alert">
-    </div>
-
-    <div class="row g-4 mb-4">
-
-        <div class="col-12 col-md-4">
-            <div class="weather-card temperature-card">
-                <h4>🌡️ Сайт Температурасы</h4>
-                <div class="weather-value temperature-value"
-                     id="temperature">Жүктелуде...</div>
-            </div>
-        </div>
-
-        <div class="col-12 col-md-4">
-            <div class="weather-card humidity-card">
-                <h4>💧 Сайт Ылғалдылығы</h4>
-                <div class="weather-value humidity-value"
-                     id="humidity">Жүктелуде...</div>
-            </div>
-        </div>
-
-        <div class="col-12 col-md-4">
-            <div class="weather-card pressure-card">
-                <h4>📍 Сайт Қысымы</h4>
-                <div class="weather-value pressure-value"
-                     id="pressure">Жүктелуде...</div>
-            </div>
-        </div>
-
-    </div>
-
-    <div class="row g-4">
-
-        <div class="col-12 col-lg-4">
-            <div class="chart-card">
-                <h5 class="temperature-title">🌡️ Температура Графигі</h5>
-                <div class="chart-container">
-                    <canvas id="temperatureChart"></canvas>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-12 col-lg-4">
-            <div class="chart-card">
-                <h5 class="humidity-title">💧 Ылғалдылық Графигі</h5>
-                <div class="chart-container">
-                    <canvas id="humidityChart"></canvas>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-12 col-lg-4">
-            <div class="chart-card">
-                <h5 class="pressure-title">📍 Қысым Графигі</h5>
-                <div class="chart-container">
-                    <canvas id="pressureChart"></canvas>
-                </div>
-            </div>
-        </div>
-
-    </div>
-
-    <h3 class="section-title">🌤️ Open-Meteo: Алдағы сағаттардың болжамы</h3>
-
-    <div class="table-responsive">
-        <table class="table table-dark table-striped table-hover">
-            <thead>
-                <tr>
-                    <th>Уақыт</th>
-                    <th>Температура (°C)</th>
-                    <th>Ылғалдылық (%)</th>
-                    <th>Қысым (hPa)</th>
-                </tr>
-            </thead>
-            <tbody id="forecastTable">
-                <tr>
-                    <td colspan="4" class="text-center">
-                        Деректер жүктелуде...
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-
-    <h3 class="section-title">📋 MQTT: Жергілікті өлшеулер журналы</h3>
-
-    <div class="status mb-2">
-        Бұл кесте MQTT арқылы келген сенсор деректерін көрсетеді.
-        Open-Meteo болжамы бұл кестеге қосылмайды.
-    </div>
-
-    <div class="table-responsive">
-        <table class="table table-dark table-striped">
-            <thead>
-                <tr>
-                    <th>Уақыт</th>
-                    <th>Температура (°C)</th>
-                    <th>Ылғалдылық (%)</th>
-                    <th>Қысым (hPa)</th>
-                </tr>
-            </thead>
-            <tbody id="localTable">
-                <tr>
-                    <td colspan="4" class="text-center">
-                        MQTT деректері әлі жоқ
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-
-    <div class="status">
-        Деректер автоматты түрде әр 60 секунд сайын жаңартылады.
-    </div>
-
-</div>
-
-<script>
-    let temperatureChart;
-    let humidityChart;
-    let pressureChart;
-
-    function createChart(canvasId, label, color, unit) {
-        return new Chart(document.getElementById(canvasId), {
-            type: "line",
-
-            data: {
-                labels: [],
-                datasets: [{
-                    label: label,
-                    data: [],
-                    borderColor: color,
-                    backgroundColor: color + "22",
-                    borderWidth: 2,
-                    pointRadius: 2,
-                    tension: 0.3,
-                    fill: true
-                }]
-            },
-
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-
-                interaction: {
-                    intersect: false,
-                    mode: "index"
-                },
-
-                plugins: {
-                    legend: {
-                        labels: {
-                            color: "#aaa"
-                        }
-                    }
-                },
-
-                scales: {
-                    x: {
-                        ticks: {
-                            color: "#aaa",
-                            maxTicksLimit: 6,
-                            maxRotation: 0
-                        },
-                        grid: {
-                            color: "#222"
-                        }
-                    },
-
-                    y: {
-                        title: {
-                            display: true,
-                            text: unit,
-                            color: "#aaa"
-                        },
-                        ticks: {
-                            color: "#aaa"
-                        },
-                        grid: {
-                            color: "#222"
-                        }
-                    }
-                }
-            }
-        });
+  if not local_df.empty:
+    latest_local = {
+        "timestamp": local_df.iloc[0]["timestamp"],
+        "temperature": float(local_df.iloc[0]["temperature"]),
+        "humidity": float(local_df.iloc[0]["humidity"]),
+        "pressure": float(local_df.iloc[0]["pressure"]),
+    }
+  else:
+    latest_local = {
+        "temperature": 0,
+        "humidity": 0,
+        "pressure": 0,
+        "timestamp": "Жоқ",
     }
 
-    function showNumber(value, suffix) {
-        if (value === null || value === undefined ||
-            !Number.isFinite(Number(value))) {
-            return "--";
-        }
+  current_web = {"temperature": 0, "humidity": 0, "pressure": 0}
+  web_hourly_list = []
 
-        return Number(value).toFixed(1) + suffix;
+  if web_data and "current" in web_data:
+    curr = web_data["current"]
+    current_web = {
+        "temperature": curr.get("temperature_2m", 0),
+        "humidity": curr.get("relative_humidity_2m", 0),
+        "pressure": curr.get("surface_pressure", 0),
     }
 
-    function formatTime(value) {
-        if (!value) {
-            return "--";
-        }
+  if web_data and "hourly" in web_data:
+    hourly = web_data["hourly"]
+    for i in range(min(15, len(hourly["time"]))):
+      web_hourly_list.append({
+          "time": hourly["time"][i].replace("T", " "),
+          "temperature": hourly["temperature_2m"][i],
+          "humidity": hourly["relative_humidity_2m"][i],
+          "pressure": hourly["surface_pressure"][i],
+      })
 
-        return value.replace("T", " ");
-    }
+  ai_results = []
+  if not local_df.empty:
+    last_t = latest_local["temperature"]
+    last_h = latest_local["humidity"]
+    last_p = latest_local["pressure"]
 
-    function updateChart(chart, records, field) {
-        chart.data.labels = records.map(function (item) {
-            return item.time.slice(5, 16);
-        });
+    current_t = last_t
+    current_h = last_h
+    current_p = last_p
 
-        chart.data.datasets[0].data = records.map(function (item) {
-            return item[field];
-        });
+    for step in range(1, 7):
+      if step in [1, 4]:
+        current_t += 0.3
+        current_h -= 10
+        current_p += 1.0
+      elif step in [2, 5]:
+        current_t -= 0.2
+        current_h += 15
+        current_p -= 1.5
+      else:
+        current_t += 0.1
+        current_h += 25
+        current_p -= 2.5
 
-        chart.update();
-    }
+      current_h = max(10, min(100, current_h))
 
-    function updateForecastTable(records) {
-        const table = document.getElementById("forecastTable");
+      if current_t < 0.0:
+        cond = "❄️ Аязды ауа райы"
+      elif current_h > 70.0:
+        cond = "🌧️ Жаңбыр жаууы мүмкін"
+      elif current_h >= 55.0:
+        cond = "🌥️ Бұлтты ауа райы"
+      else:
+        cond = "☀️ Ашық күн"
 
-        if (!records || records.length === 0) {
-            table.innerHTML = `
-                <tr>
-                    <td colspan="4" class="text-center">
-                        Болжам деректері жоқ
-                    </td>
-                </tr>`;
-            return;
-        }
+      ai_results.append({
+          "step": f"Алдағы {step}-ші сағат",
+          "temp": round(current_t, 2),
+          "humidity": round(current_h, 1),
+          "pressure": round(current_p, 2),
+          "condition": cond,
+      })
 
-        table.innerHTML = records.map(function (item) {
-            return `
-                <tr>
-                    <td>${formatTime(item.time)}</td>
-                    <td>${showNumber(item.temperature, " °C")}</td>
-                    <td>${showNumber(item.humidity, " %")}</td>
-                    <td>${showNumber(item.pressure, " hPa")}</td>
-                </tr>`;
-        }).join("");
-    }
+  return jsonify({
+      "latest_local": latest_local,
+      "current_web": current_web,
+      "local_table": local_records,
+      "web_table": web_hourly_list,
+      "chart_data": (
+          local_df.iloc[::-1].to_dict(orient="records")
+          if not local_df.empty
+          else []
+      ),
+      "ai_predictions": ai_results,
+  })
 
-    function updateLocalTable(records) {
-        const table = document.getElementById("localTable");
 
-        if (!records || records.length === 0) {
-            table.innerHTML = `
-                <tr>
-                    <td colspan="4" class="text-center">
-                        MQTT деректері әлі жоқ
-                    </td>
-                </tr>`;
-            return;
-        }
-
-        table.innerHTML = records.map(function (item) {
-            return `
-                <tr>
-                    <td>${formatTime(item.timestamp)}</td>
-                    <td>${showNumber(item.temperature, " °C")}</td>
-                    <td>${showNumber(item.humidity, " %")}</td>
-                    <td>${showNumber(item.pressure, " hPa")}</td>
-                </tr>`;
-        }).join("");
-    }
-
-    async function loadWeather() {
-        const errorBox = document.getElementById("errorMessage");
-
-        try {
-            const response = await fetch("/api/data", {
-                cache: "no-store"
-            });
-
-            if (!response.ok) {
-                throw new Error("Сервер қатесі: HTTP " + response.status);
-            }
-
-            const data = await response.json();
-
-            if (!data.current_web) {
-                throw new Error(
-                    data.weather_error || "Open-Meteo деректері жоқ"
-                );
-            }
-
-            const current = data.current_web;
-
-            document.getElementById("temperature").textContent =
-                showNumber(current.temperature, " °C");
-
-            document.getElementById("humidity").textContent =
-                showNumber(current.humidity, " %");
-
-            document.getElementById("pressure").textContent =
-                showNumber(current.pressure, " hPa");
-
-            document.getElementById("updatedTime").textContent =
-                " | Соңғы жаңарту: " + formatTime(current.time);
-
-            const forecast = data.chart_data || [];
-
-            updateChart(temperatureChart, forecast, "temperature");
-            updateChart(humidityChart, forecast, "humidity");
-            updateChart(pressureChart, forecast, "pressure");
-
-            updateForecastTable(data.web_table);
-            updateLocalTable(data.local_table);
-
-            errorBox.classList.add("d-none");
-
-        } catch (error) {
-            console.error("Weather loading error:", error);
-
-            errorBox.textContent =
-                "Погода жүктелмеді: " + error.message;
-
-            errorBox.classList.remove("d-none");
-        }
-    }
-
-    temperatureChart = createChart(
-        "temperatureChart",
-        "Температура °C",
-        "#ff5868",
-        "°C"
-    );
-
-    humidityChart = createChart(
-        "humidityChart",
-        "Ылғалдылық %",
-        "#1680ff",
-        "%"
-    );
-
-    pressureChart = createChart(
-        "pressureChart",
-        "Қысым hPa",
-        "#27c477",
-        "hPa"
-    );
-
-    loadWeather();
-
-    setInterval(loadWeather, 60000);
-</script>
-
-</body>
-</html>
+if __name__ == "__main__":
+  threading.Thread(target=start_mqtt_listener, daemon=True).start()
+  app.run(host="0.0.0.0", port=5000, debug=True)
